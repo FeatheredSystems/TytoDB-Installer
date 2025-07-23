@@ -1,27 +1,35 @@
 #!/bin/bash
 
 set -e
+echo "";
+INSTALL_AS_DAEMON=1
+
+# Parse flags
+for arg in "$@"; do
+    case "$arg" in
+        --no-daemon|-nd)
+            INSTALL_AS_DAEMON=0
+            ;;
+    esac
+done
+
+ARCH=$(uname -m)
+OS=$(uname -s)
 
 echo "== Tyto Database Installer =="
-echo "1) Install pre-built binary"
-echo "2) Clone source code & compile"
 
-read -p "Enter your choice (default=1): " answer
-INSTALLATION_TYPE=1
-case "$answer" in
-    1) INSTALLATION_TYPE=1 ;;
-    2) INSTALLATION_TYPE=2 ;;
-    *) INSTALLATION_TYPE=1 ;;
-esac
-
-echo "== Daemon =="
-echo "Want to create a daemon for the binary (run on system boot)?"
-read -p "Enter your choice (default=y) [Y/n]: " answer
-INSTALL_AS_DAEMON=1
-case "$answer" in
-    [nN]*) INSTALL_AS_DAEMON=0 ;;
-    *) INSTALL_AS_DAEMON=1 ;;
-esac
+if [ "$OS" != "Linux" ] || [ "$ARCH" != "x86_64" ]; then
+    echo "⚠️  Unsupported OS or architecture ($OS / $ARCH). Falling back to source compilation."
+    INSTALLATION_TYPE=2
+else
+    echo "1) Install pre-built binary"
+    echo "2) Clone source code & compile"
+    read -p "Enter your choice (default=1): " answer
+    case "$answer" in
+        2) INSTALLATION_TYPE=2 ;;
+        *) INSTALLATION_TYPE=1 ;;
+    esac
+fi
 
 if [ "$INSTALLATION_TYPE" = "1" ]; then
     REPO="FeatheredSystems/TytoDB"
@@ -59,8 +67,26 @@ if [ "$INSTALLATION_TYPE" = "1" ]; then
     esac
 else
     echo "Cloning and compiling the source code..."
-    # Placeholder - not yet implemented
-    exit 1
+
+    if ! command -v git >/dev/null || ! command -v cargo >/dev/null; then
+        echo "❌ 'git' and 'cargo' are required to build TytoDB from source."
+        exit 1
+    fi
+
+    git clone https://github.com/FeatheredSystems/TytoDB.git
+    cd TytoDB
+    cargo build --release
+
+    BIN_PATH=target/release/tyto-db
+
+    if [ ! -f "$BIN_PATH" ]; then
+        echo "❌ Build failed or binary not found at $BIN_PATH"
+        exit 1
+    fi
+
+    chmod +x "$BIN_PATH"
+    sudo mv "$BIN_PATH" /usr/local/bin/tyto-db
+    echo "✅ Compiled and installed to /usr/local/bin"
 fi
 
 if [ "$INSTALL_AS_DAEMON" = "1" ]; then
@@ -91,5 +117,7 @@ EOF
 
     echo "✅ TytoDB service installed and running."
     echo "Use 'sudo systemctl status tytodb' to check status."
+else
+    echo "⚙️  Skipped daemon setup (--no-daemon)"
 fi
 
